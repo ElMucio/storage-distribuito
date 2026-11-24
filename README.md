@@ -276,3 +276,7 @@ http://localhost:8080
 Tkinter richiede un server grafico X.
 
 Su server headless conviene usare direttamente le REST API.
+
+---
+
+Licenza [MIT](LICENSE).
