@@ -1,0 +1,5 @@
+# File e cartelle da escludere nel push del progetto su git.
+__pycache__/
+*.pyc
+storage_server/data/*
+.env

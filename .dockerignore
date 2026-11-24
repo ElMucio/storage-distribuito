@@ -1,0 +1,12 @@
+# File e cartelle da escludere dal "build context" di Docker.
+__pycache__/
+*.pyc
+.env
+.git/
+.gitignore
+client/
+client_gui/
+storage_server/data/
+DIARIO_PROGETTO.md
+tests/
+requirements-dev.txt

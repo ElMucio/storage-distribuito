@@ -1,0 +1,153 @@
+# Gestione dell'intero sistema: 
+# Struttura:
+#   1 nginx
+#   2 broker
+#   3 storage
+#   redis
+#   mysql
+
+# Esiste solo un servizio esposto sul PC; nginx slla porta 8000.
+# gli altri parlano solo dentro la rete privata di compose, usando i loro nomi
+# attraverso il DNS interno di docker.
+services:
+
+  # Database in-memory per i metadati (perdere i metadati = perdere i file).
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Database utenti. Le credenziali e il nome DB vengono dal file .env
+  # invece per gli script in docker/mysql-init/ vengono eseguiti al PRIMO avvio.
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 40s
+
+  # Tre nodi di storage identici. Stesso codice ma volumi separati:
+  # ogni replica di un chunk finisce su un "disco" fisicamente diverso.
+
+# Nota in più:
+# Punto importante: si costruisce una sola immagine dello storage, e da quella
+# si avviano tutte e tre container, storage 1, 2, 3. Tutti e tre
+# ascoltano sulla porta 8001 all'interno del loro container e non è un conflitto,
+# perché ogni container è una "macchina" isolata con il proprio spazio di porte. Si
+# distingueranno attraverso il nome, assegnato dal docker-compose, e per il volume
+# di dati separato.
+  storage1:
+    build:
+      context: .
+      dockerfile: storage_server/Dockerfile
+    volumes:
+      - storage1-data:/app/data
+
+  storage2:
+    build:
+      context: .
+      dockerfile: storage_server/Dockerfile
+    volumes:
+      - storage2-data:/app/data
+
+  storage3:
+    build:
+      context: .
+      dockerfile: storage_server/Dockerfile
+    volumes:
+      - storage3-data:/app/data
+
+  # Due broker simmetrici: stessa immagine, stesse env vars (incluso JWT_SECRET).
+  # Sono stateless: tutto lo stato della sessione vive in Redis e MySQL,
+  # cosi da rendere nginx autiìonomo di inoltrare la stessa richiesta indistintamente a uno o all'altro.
+  broker1:
+    build:
+      context: .
+      dockerfile: broker/Dockerfile
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
+      JWT_EXP_HOURS: "1"
+      CHUNK_SIZE: "1048576"
+      STORAGE_NODES: http://storage1:8001,http://storage2:8001,http://storage3:8001
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      storage1:
+        condition: service_started
+      storage2:
+        condition: service_started
+      storage3:
+        condition: service_started
+
+  broker2:
+    build:
+      context: .
+      dockerfile: broker/Dockerfile
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
+      JWT_EXP_HOURS: "1"
+      CHUNK_SIZE: "1048576"
+      STORAGE_NODES: http://storage1:8001,http://storage2:8001,http://storage3:8001
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      storage1:
+        condition: service_started
+      storage2:
+        condition: service_started
+      storage3:
+        condition: service_started
+
+  # Reverse proxy + load balancer. Unico container che espone una porta sul PC.
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - broker1
+      - broker2
+
+volumes:
+  redis-data:
+  mysql-data:
+  storage1-data:
+  storage2-data:
+  storage3-data:
