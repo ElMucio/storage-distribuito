@@ -6,7 +6,7 @@
 > Eight containers orchestrated with Docker Compose.
 
 > Progetto del corso di **Sistemi Paralleli e Distribuiti** — Università degli Studi di Perugia, A.A. 2025/2026  
-> Autori: **Leonardo Bordini** e **Luca Sonno**
+> Realizzato in collaborazione da [Leonardo Bordini](https://github.com/leonardobordini) e [Luca Sonno](https://github.com/ElMucio)
 
 ---
 
